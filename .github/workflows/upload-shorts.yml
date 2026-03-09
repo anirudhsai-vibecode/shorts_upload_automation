@@ -1,0 +1,74 @@
+name: Upload YouTube Shorts
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_strategy:
+        description: "Upload mode: immediate (publish now) or analytics (schedule at peak hours)"
+        required: true
+        default: "analytics"
+        type: choice
+        options:
+          - analytics
+          - immediate
+      dry_run:
+        description: "Dry run only (no upload)"
+        required: true
+        default: true
+        type: boolean
+      drive_link:
+        description: "Optional Drive folder link/id (leave empty to use DRIVE_FOLDER_LINK secret)"
+        required: false
+        type: string
+      tz_offset_hours:
+        description: "Optional timezone offset hours (example: 5, -7)"
+        required: false
+        type: string
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      DRIVE_FOLDER_LINK: ${{ secrets.DRIVE_FOLDER_LINK }}
+      CHANNEL_TZ_OFFSET_HOURS: ${{ secrets.CHANNEL_TZ_OFFSET_HOURS }}
+      WORKDIR: /tmp/shorts_uploads
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build run arguments
+        id: args
+        shell: bash
+        run: |
+          ARGS="--publish-strategy ${{ inputs.publish_strategy }}"
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ -n "${{ inputs.drive_link }}" ]; then
+            ARGS="$ARGS --drive-link \"${{ inputs.drive_link }}\""
+          fi
+
+          if [ -n "${{ inputs.tz_offset_hours }}" ]; then
+            ARGS="$ARGS --tz-offset-hours ${{ inputs.tz_offset_hours }}"
+          fi
+
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Run uploader
+        shell: bash
+        run: |
+          eval "python uploader.py ${{ steps.args.outputs.args }}"
