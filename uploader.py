@@ -49,6 +49,16 @@ def env(name: str) -> str:
     return value
 
 
+def int_env(name: str, fallback: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return fallback
+    raw = raw.strip()
+    if not raw:
+        return fallback
+    return int(raw)
+
+
 def get_credentials() -> Credentials:
     return Credentials(
         token=None,
@@ -331,7 +341,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tz-offset-hours",
-        default=int(os.getenv("CHANNEL_TZ_OFFSET_HOURS", "0")),
+        default=int_env("CHANNEL_TZ_OFFSET_HOURS", 0),
         type=int,
         help="Channel timezone offset from UTC (e.g. +5 for UTC+5)",
     )
