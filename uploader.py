@@ -18,6 +18,8 @@ import sys
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -77,6 +79,21 @@ def extract_drive_folder_id(link: str) -> str:
     if not m:
         raise ValueError("Could not extract Google Drive folder ID from DRIVE_FOLDER_LINK")
     return m.group(1)
+
+
+def validate_credentials(creds: Credentials) -> None:
+    try:
+        creds.refresh(Request())
+    except RefreshError as exc:
+        message = str(exc)
+        if "unauthorized_client" in message:
+            raise RuntimeError(
+                "OAuth refresh token rejected (unauthorized_client). "
+                "Check that GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET match the client used to generate "
+                "GOOGLE_REFRESH_TOKEN, OAuth consent screen is configured, and the app is in Production "
+                "or your Google account is added as a Test User."
+            ) from exc
+        raise RuntimeError(f"Failed to refresh Google OAuth token: {exc}") from exc
 
 
 def build_services(creds: Credentials):
@@ -274,6 +291,7 @@ def run(
 ) -> None:
     os.makedirs(workdir, exist_ok=True)
     creds = get_credentials()
+    validate_credentials(creds)
     youtube, analytics, drive = build_services(creds)
 
     folder_id = extract_drive_folder_id(drive_link)

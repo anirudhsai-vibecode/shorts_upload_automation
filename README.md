@@ -84,3 +84,5 @@ A manual workflow is included at `.github/workflows/upload-shorts.yml`.
 - `No YouTube channel found`: refresh token account has no channel.
 - `insufficientPermissions`: APIs/scopes are incomplete.
 - `No new Drive videos to upload.`: all videos are already uploaded or folder has no videos.
+
+- `unauthorized_client` (RefreshError): your OAuth client and refresh token do not match, or the OAuth app is still in testing without your account added as a test user. Regenerate the refresh token using the same `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, and ensure consent screen/app user access is configured.
