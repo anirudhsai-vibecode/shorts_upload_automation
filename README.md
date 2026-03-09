@@ -1,41 +1,86 @@
 ## YouTube Shorts Upload Automation
 
-Automates daily upload of **3 short videos** from a Google Drive folder and schedules them during peak audience watch hours.
+Automates daily upload of **up to 3 short videos** from a Google Drive folder.
 
-### What it does
-- Reads videos from a provided Google Drive folder.
-- Skips files that were already uploaded (tracked by embedded `DriveFileId:<id>` marker in description).
-- Uses YouTube Analytics (`views` by hour over recent days) to estimate top 3 audience hours.
-- Uploads up to 3 new videos and schedules publishing at those peak times.
+You now have **2 upload modes**:
+- `immediate`: uploads and publishes videos right away.
+- `analytics`: uploads and schedules videos at peak audience hours.
 
-### Setup
-1. Create OAuth client in Google Cloud and enable:
-   - YouTube Data API v3
-   - YouTube Analytics API
-   - Google Drive API
-2. Generate a refresh token for the same Google account/channel.
-3. Install dependencies:
+## What you need to change
+1. Copy env template:
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
+   cp .env.example .env
    ```
-4. Configure environment variables (copy `.env.example`).
+2. Fill your values in `.env`:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `GOOGLE_REFRESH_TOKEN`
+   - `DRIVE_FOLDER_LINK`
+3. Optional values:
+   - `CHANNEL_TZ_OFFSET_HOURS`
+   - `WORKDIR`
+   - `PUBLISH_STRATEGY` (`analytics` or `immediate`)
 
-### Run once
+## Prerequisites
+- Python 3.9+
+- Google Cloud APIs enabled:
+  - YouTube Data API v3
+  - YouTube Analytics API
+  - Google Drive API
+- OAuth client credentials + refresh token for the same Google account/channel.
+
+## Install locally
 ```bash
-python uploader.py --drive-link "https://drive.google.com/drive/folders/<folder-id>"
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Dry run:
+## Run locally
+Load env first:
 ```bash
-python uploader.py --drive-link "<folder-id>" --dry-run
+set -a && source .env && set +a
 ```
 
-### Run daily (cron)
-Run every day (example 08:00 server time):
-```cron
-0 8 * * * /path/to/python /workspace/shorts_upload_automation/uploader.py --drive-link "https://drive.google.com/drive/folders/<folder-id>" >> /var/log/shorts_uploader.log 2>&1
+### Option 1: upload immediately
+```bash
+python uploader.py --publish-strategy immediate
 ```
 
-The script uploads max 3 new files per run; if fewer than 3 are new, it uploads only available new files.
+### Option 2: use analytics and schedule uploads
+```bash
+python uploader.py --publish-strategy analytics
+```
+
+### Dry run (no upload)
+```bash
+python uploader.py --publish-strategy analytics --dry-run
+```
+
+## GitHub Actions workflow (manual run)
+A manual workflow is included at `.github/workflows/upload-shorts.yml`.
+
+### How to set env variables in GitHub
+1. Open your repository on GitHub.
+2. Go to **Settings → Secrets and variables → Actions**.
+3. Click **New repository secret** and create:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+   - `GOOGLE_REFRESH_TOKEN`
+   - `DRIVE_FOLDER_LINK`
+   - `CHANNEL_TZ_OFFSET_HOURS` (optional)
+4. Go to **Actions → Upload YouTube Shorts → Run workflow**.
+5. Choose:
+   - `publish_strategy = immediate` (publish now), or
+   - `publish_strategy = analytics` (schedule at peak hours).
+6. Keep `dry_run=true` for first test, then run with `dry_run=false`.
+
+## Duplicate skipping behavior
+- On upload, script appends `DriveFileId:<drive_file_id>` in description.
+- On future runs, files with already-seen Drive IDs are skipped.
+
+## Troubleshooting
+- `Missing required environment variable`: ensure `.env` (local) or GitHub secrets are set.
+- `No YouTube channel found`: refresh token account has no channel.
+- `insufficientPermissions`: APIs/scopes are incomplete.
+- `No new Drive videos to upload.`: all videos are already uploaded or folder has no videos.

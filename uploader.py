@@ -218,9 +218,18 @@ def upload_video(
     path: str,
     title: str,
     description: str,
-    publish_at_utc: dt.datetime,
+    publish_at_utc: Optional[dt.datetime],
     tags: Optional[List[str]] = None,
 ) -> str:
+    status: Dict[str, object] = {
+        "selfDeclaredMadeForKids": False,
+    }
+    if publish_at_utc is None:
+        status["privacyStatus"] = "public"
+    else:
+        status["privacyStatus"] = "private"
+        status["publishAt"] = publish_at_utc.replace(microsecond=0).isoformat() + "Z"
+
     body = {
         "snippet": {
             "title": title,
@@ -228,11 +237,7 @@ def upload_video(
             "tags": tags or ["shorts", "youtube shorts"],
             "categoryId": "22",
         },
-        "status": {
-            "privacyStatus": "private",
-            "publishAt": publish_at_utc.replace(microsecond=0).isoformat() + "Z",
-            "selfDeclaredMadeForKids": False,
-        },
+        "status": status,
     }
 
     media = MediaFileUpload(path, resumable=True)
@@ -250,7 +255,13 @@ def select_new_videos(
     return selected[:limit]
 
 
-def run(drive_link: str, tz_offset_hours: int, workdir: str, dry_run: bool = False) -> None:
+def run(
+    drive_link: str,
+    tz_offset_hours: int,
+    workdir: str,
+    publish_strategy: str,
+    dry_run: bool = False,
+) -> None:
     os.makedirs(workdir, exist_ok=True)
     creds = get_credentials()
     youtube, analytics, drive = build_services(creds)
@@ -264,26 +275,31 @@ def run(drive_link: str, tz_offset_hours: int, workdir: str, dry_run: bool = Fal
         logging.info("No new Drive videos to upload.")
         return
 
-    peak_hours = aggregate_peak_hours(analytics)
-    publish_times = next_publish_times(peak_hours, tz_offset_hours=tz_offset_hours)
+    publish_times: List[Optional[dt.datetime]] = []
+    if publish_strategy == "analytics":
+        peak_hours = aggregate_peak_hours(analytics)
+        publish_times = next_publish_times(peak_hours, tz_offset_hours=tz_offset_hours)
 
     for i, video in enumerate(to_upload):
         local_path = os.path.join(workdir, f"{video.file_id}_{video.name}")
-        publish_at = publish_times[i % len(publish_times)] + dt.timedelta(days=i // len(publish_times))
+        publish_at: Optional[dt.datetime] = None
+        if publish_strategy == "analytics":
+            publish_at = publish_times[i % len(publish_times)] + dt.timedelta(days=i // len(publish_times))
         marker = f"\n\n{DRIVE_MARKER}:{video.file_id}"
-        description = (
-            "Uploaded by shorts automation."
-            f"\nOriginal file: {video.name}"
+        schedule_line = (
             f"\nScheduled at: {publish_at.isoformat()} UTC"
-            + marker
+            if publish_at is not None
+            else "\nPublished immediately"
         )
+        description = "Uploaded by shorts automation." f"\nOriginal file: {video.name}" + schedule_line + marker
 
         if dry_run:
             logging.info(
-                "[DRY RUN] Would upload '%s' (Drive ID: %s) for %s",
+                "[DRY RUN] Would upload '%s' (Drive ID: %s) with strategy=%s %s",
                 video.name,
                 video.file_id,
-                publish_at.isoformat() + "Z",
+                publish_strategy,
+                f"at {publish_at.isoformat()}Z" if publish_at is not None else "immediately",
             )
             continue
 
@@ -324,6 +340,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=os.getenv("WORKDIR", "/tmp/shorts_uploads"),
         help="Temp folder for downloading videos before upload",
     )
+    parser.add_argument(
+        "--publish-strategy",
+        default=os.getenv("PUBLISH_STRATEGY", "analytics"),
+        choices=["analytics", "immediate"],
+        help="'analytics' schedules by peak hours, 'immediate' publishes right away",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preview actions only")
     return parser.parse_args(argv)
 
@@ -341,6 +363,7 @@ def main(argv: Sequence[str]) -> int:
             drive_link=args.drive_link,
             tz_offset_hours=args.tz_offset_hours,
             workdir=args.workdir,
+            publish_strategy=args.publish_strategy,
             dry_run=args.dry_run,
         )
     except HttpError as exc:
